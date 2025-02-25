@@ -93,7 +93,7 @@ RUN apk add --no-cache --update \
 FROM final-${VARIANT} AS final
 
 ARG PORT=3000 \
-    USERNAME=node
+    USERNAME=root
 
 # Set environment variables
 ENV HEALTHCHECK_PORT=$PORT \
