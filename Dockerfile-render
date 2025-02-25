@@ -127,7 +127,7 @@ VOLUME ["/uploads", "/database"]
 
 # Set container timezone and make entrypoint script executable
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
-    chmod +x ./entrypoint.sh \
+    chmod +x ./entrypoint.sh
     # setcap cap_net_raw+p ???
 	# TODO: To improve security, consider dropping unnecessary capabilities instead of granting image all network capabilities of host. (Maybe `setcap cap_net_raw+p /usr/bin/ping`, etc.) Could also drop all and then grant only the capabilities that are explicitly needed. Some examples are commented out below...
 	# setcap cap_net_bind_service=+ep /usr/local/bin/node
