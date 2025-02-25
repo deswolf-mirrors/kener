@@ -140,7 +140,7 @@ RUN setcap cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/ping6 || setcap cap_net_admin,cap_net_raw+ep /bin/ping6 || echo "==ERROR: setcap ping6=="
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/tracepath || echo "==ERROR: setcap tracepath=="
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/clockdiff || echo "==ERROR: setcap clockdiff=="
-RUN setcap cap_net_raw+ep /usr/local/bin/node || echo "==ERROR: setcap node=="
+#RUN setcap cap_net_raw+ep /usr/local/bin/node || echo "==ERROR: setcap node=="
 
 # Expose the application port
 EXPOSE $PORT
