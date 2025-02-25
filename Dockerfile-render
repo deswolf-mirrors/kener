@@ -136,11 +136,11 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
 	# setcap cap_net_bind_service=+ep /usr/bin/tracepath
 	# setcap cap_net_bind_service=+ep /usr/bin/clockdiff
 
-RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /bin/ping || echo "==ERROR: setcap ping=="
+RUN setcap cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /bin/ping || echo "==ERROR: setcap ping=="
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/ping6 || setcap cap_net_admin,cap_net_raw+ep /bin/ping6 || echo "==ERROR: setcap ping6=="
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/tracepath || echo "==ERROR: setcap tracepath=="
 #RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/clockdiff || echo "==ERROR: setcap clockdiff=="
-RUN setcap cap_net_admin,cap_net_raw+ep /usr/local/bin/node || echo "==ERROR: setcap node=="
+RUN setcap cap_net_raw+ep /usr/local/bin/node || echo "==ERROR: setcap node=="
 
 # Expose the application port
 EXPOSE $PORT
