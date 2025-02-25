@@ -154,4 +154,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 USER $USERNAME
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["/usr/local/bin/node", "main"]
+CMD ["node", "main"]
