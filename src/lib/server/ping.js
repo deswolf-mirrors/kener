@@ -45,13 +45,14 @@ const Ping = async function (type, host, timeout, count) {
 		host: host,
 		type: type
 	};
-
+  console.log(`🔍 Debug: Pinging ${host}...`, type); //x
 	try {
 		let res = await ping.promise.probe(host, {
 			v6: type === "IP6",
 			timeout: type === "IP6" ? false : Math.floor(timeout / 1000),
 			min_reply: count
 		});
+    console.log(`✅ Debug: Ping result for ${host}:`, res); // x
 		output.alive = res.alive;
 		output.min = res.min;
 		output.max = res.max;
