@@ -136,7 +136,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
 	# setcap cap_net_bind_service=+ep /usr/bin/tracepath
 	# setcap cap_net_bind_service=+ep /usr/bin/clockdiff
 
-RUN setcap cap_net_raw+p /usr/bin/ping || setcap cap_net_raw+p /bin/ping || echo "Failed to set capabilities on ping"
+RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /bin/ping || echo "Failed to set capabilities on ping"
 
 # Expose the application port
 EXPOSE $PORT
