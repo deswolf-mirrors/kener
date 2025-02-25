@@ -80,7 +80,8 @@ RUN apt-get update && apt-get install -y \
         sqlite3=3.40.1-2+deb12u1 \
         tzdata=2024b-0+deb12u1 \
 		# TODO: Is it ok to change to `curl` here so that we don't have to maintain `wget` version mismatch between Debian architectures? (`curl` is only used for the container healthcheck and because there is an Alpine variant (best!) we probably don't care if the Debian image ends up building bigger due to `curl`.)
-		curl=7.88.1-10+deb12u8 && \
+		curl=7.88.1-10+deb12u8 \
+		libcap2-bin && \
     rm -rf /var/lib/apt/lists/*
 
 FROM node:${ALPINE_VERSION} AS final-alpine
@@ -127,7 +128,7 @@ VOLUME ["/uploads", "/database"]
 # Set container timezone and make entrypoint script executable
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     chmod +x ./entrypoint.sh \
-    setcap cap_net_raw+p $(which ping) || echo "Failed to set capabilities on ping"
+    setcap cap_net_raw+p $(which ping) || echo "Failed to set capabilities on ping $(which ping)"
 	# TODO: To improve security, consider dropping unnecessary capabilities instead of granting image all network capabilities of host. (Maybe `setcap cap_net_raw+p /usr/bin/ping`, etc.) Could also drop all and then grant only the capabilities that are explicitly needed. Some examples are commented out below...
 	# setcap cap_net_bind_service=+ep /usr/local/bin/node
 	# setcap cap_net_bind_service=+ep /usr/bin/ping
