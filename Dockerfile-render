@@ -59,12 +59,13 @@ FROM node:${DEBIAN_VERSION} AS final
 # Install runtime dependencies, including Cloudflare Warp
 RUN apt-get update && apt-get install -y \
         gnupg \
+        lsb-release \
         iputils-ping=3:20221126-1+deb12u1 \
         sqlite3=3.40.1-2+deb12u1 \
         tzdata=2024b-0+deb12u1 \
         curl=7.88.1-10+deb12u8 && \
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/cloudflare-client.list && \
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -sc || echo 'bookworm') main" | tee /etc/apt/sources.list.d/cloudflare-client.list && \
     apt-get update && apt-get install -y cloudflare-warp && \
     rm -rf /var/lib/apt/lists/*
 
@@ -103,24 +104,4 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
     chmod +x ./entrypoint.sh
 
 # Add Cloudflare Warp setup to the entrypoint
-RUN echo '#!/bin/bash\n\
-warp-cli register\n\
-warp-cli connect\n\
-exec "$@"' > /usr/local/bin/entrypoint-warp.sh && \
-    chmod +x /usr/local/bin/entrypoint-warp.sh
-
-# Expose the application port
-EXPOSE $PORT
-
-# Add a healthcheck to the container
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-	CMD curl --silent --head --fail http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1
-
-# Use a non-root user (recommended for security)
-USER node
-
-# Use the custom entrypoint script
-ENTRYPOINT ["/usr/local/bin/entrypoint-warp.sh"]
-
-# Start the application
-CMD ["node", "main"]
+RUN echo '#!/bin
