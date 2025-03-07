@@ -73,22 +73,27 @@ RUN npm run build && \
 #             STAGE 2: PRODUCTION/FINAL STAGE              #
 #==========================================================#
 
-FROM node:${DEBIAN_VERSION} AS final-debian
 # TODO: Consider adding `--no-install-recommends`, but will need testing (may further help reduce final build size)
+FROM node:${DEBIAN_VERSION} AS final-debian
 RUN apt-get update && apt-get install -y \
         iputils-ping=3:20221126-1+deb12u1 \
         sqlite3=3.40.1-2+deb12u1 \
         tzdata=2024b-0+deb12u1 \
-		# TODO: Is it ok to change to `curl` here so that we don't have to maintain `wget` version mismatch between Debian architectures? (`curl` is only used for the container healthcheck and because there is an Alpine variant (best!) we probably don't care if the Debian image ends up building bigger due to `curl`.)
-		curl=7.88.1-10+deb12u8 \
-		libcap2-bin && \
+        curl=7.88.1-10+deb12u8 \
+        libcap2-bin \
+        sudo && \
+    echo "root ALL=(ALL) NOPASSWD: /bin/ping, /usr/bin/ping" >> /etc/sudoers && \
+    echo "node ALL=(ALL) NOPASSWD: /bin/ping, /usr/bin/ping" >> /etc/sudoers && \
     rm -rf /var/lib/apt/lists/*
 
 FROM node:${ALPINE_VERSION} AS final-alpine
 RUN apk add --no-cache --update \
-	iputils=20240905-r0 \
-	sqlite=3.48.0-r0 \
-	tzdata
+    iputils=20240905-r0 \
+    sqlite=3.48.0-r0 \
+    tzdata \
+    sudo && \
+    echo "root ALL=(ALL) NOPASSWD: /bin/ping" >> /etc/sudoers && \
+    echo "node ALL=(ALL) NOPASSWD: /bin/ping" >> /etc/sudoers
 
 FROM final-${VARIANT} AS final
 
@@ -144,6 +149,10 @@ RUN setcap cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /
 
 # Expose the application port
 EXPOSE $PORT
+
+RUN echo '#!/bin/sh\nsudo /bin/ping "$@" || sudo /usr/bin/ping "$@"' > /usr/local/bin/ping-wrapper && \
+    chmod +x /usr/local/bin/ping-wrapper && \
+    ln -sf /usr/local/bin/ping-wrapper /usr/local/bin/ping
 
 # Add a healthcheck to the container; `wget` vs. `curl` depending on base image. Using this approach because `wget` does not actually maintain versioning across architectures, so we cannot pin a `wget` version (in above `final-debian` base, `apt-get install`) between differing architectures (e.g. arm64, amd64)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
