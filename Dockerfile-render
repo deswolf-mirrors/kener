@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 
 # Global build arguments
-ARG ALPINE_VERSION=23.7.0-alpine3.21
 ARG DEBIAN_VERSION=23.7.0-bookworm-slim
-ARG VARIANT=debian
 
 #==========================================================#
-#                   STAGE 1: BUILD STAGE                    #
+#                   STAGE 1: BUILD STAGE                   #
 #==========================================================#
 
-FROM node:${DEBIAN_VERSION} AS builder-debian
+FROM node:${DEBIAN_VERSION} AS builder
+
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
         build-essential=12.9 \
         python3=3.11.2-1+b1 \
@@ -18,27 +18,11 @@ RUN apt-get update && apt-get install -y \
         make=4.3-4.1 \
         node-gyp=9.3.0-2 \
         g++=4:12.2.0-3 \
-        tzdata=2024b-0+deb12u1 \
-        iputils-ping=3:20221126-1+deb12u1 \
-		libcap2-bin && \
+        tzdata=2024b-0+deb12u1 && \
     rm -rf /var/lib/apt/lists/*
 
-FROM node:${ALPINE_VERSION} AS builder-alpine
-RUN apk add --no-cache --update \
-        build-base=0.5-r3 \
-        python3=3.12.9-r0 \
-        py3-pip=24.3.1-r0 \
-        make=4.4.1-r2 \
-        g++=14.2.0-r4 \
-        sqlite=3.48.0-r0 \
-        sqlite-dev=3.48.0-r0 \
-        tzdata \
-        iputils=20240905-r0
-
-FROM builder-${VARIANT} AS builder
-
 # Set environment variables
-ENV NPM_CONFIG_LOGLEVEL=info \
+ENV NPM_CONFIG_LOGLEVEL=error \
     VITE_BUILD_ENV=production
 
 # Set the working directory
@@ -47,8 +31,7 @@ WORKDIR /app
 # Copy package files for dependency installation
 COPY package*.json ./
 
-# Install all dependencies, including `devDependencies` (cache enabled for faster builds)
-# TODO: Possibly add `--no-audit` flag to `npm ci` to prevent `npm` from running a security audit on installed packages. (By default, `npm install` performs an audit to check for vulnerabilities in dependencies, which can slow down installation. Adding this flag would skip the audit, thus making `npm install` significantly faster for the CI/CD pipeline.)
+# Install all dependencies, including `devDependencies`
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-fund && \
     npm cache clean --force
@@ -56,13 +39,11 @@ RUN --mount=type=cache,target=/root/.npm \
 # Copy application source code
 COPY . .
 
-# TODO: Reevaluate permissions (possibly reduce?)...
-# Remove docs directory and ensure required directories exist
+# Remove unnecessary files and ensure required directories exist
 RUN rm -rf src/routes/\(docs\) \
 		static/documentation \
 		static/fonts/lato/full && \
 	mkdir -p uploads database && \
-	# TODO: Consider changing below to `chmod -R u-rwX,g=rX,o= uploads database`
     chmod -R 750 uploads database
 
 # Build the application and remove `devDependencies`
@@ -73,29 +54,21 @@ RUN npm run build && \
 #             STAGE 2: PRODUCTION/FINAL STAGE              #
 #==========================================================#
 
-FROM node:${DEBIAN_VERSION} AS final-debian
-# TODO: Consider adding `--no-install-recommends`, but will need testing (may further help reduce final build size)
+FROM node:${DEBIAN_VERSION} AS final
+
+# Install runtime dependencies, including Cloudflare Warp
 RUN apt-get update && apt-get install -y \
         iputils-ping=3:20221126-1+deb12u1 \
         sqlite3=3.40.1-2+deb12u1 \
         tzdata=2024b-0+deb12u1 \
-		# TODO: Is it ok to change to `curl` here so that we don't have to maintain `wget` version mismatch between Debian architectures? (`curl` is only used for the container healthcheck and because there is an Alpine variant (best!) we probably don't care if the Debian image ends up building bigger due to `curl`.)
-		curl=7.88.1-10+deb12u8 \
-		libcap2-bin && \
+        curl=7.88.1-10+deb12u8 && \
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | apt-key add - && \
+    echo "deb https://pkg.cloudflareclient.com/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/cloudflare-client.list && \
+    apt-get update && apt-get install -y cloudflare-warp && \
     rm -rf /var/lib/apt/lists/*
 
-FROM node:${ALPINE_VERSION} AS final-alpine
-RUN apk add --no-cache --update \
-	iputils=20240905-r0 \
-	sqlite=3.48.0-r0 \
-	tzdata
-
-FROM final-${VARIANT} AS final
-
-ARG PORT=3000 \
-    USERNAME=root
-
 # Set environment variables
+ARG PORT=3000
 ENV HEALTHCHECK_PORT=$PORT \
     HEALTHCHECK_PATH= \
     NODE_ENV=production \
@@ -106,12 +79,11 @@ ENV HEALTHCHECK_PORT=$PORT \
 # Set the working directory
 WORKDIR /app
 
-# Copy package files build artifacts, and necessary files from builder stage
+# Copy build artifacts and necessary files from the builder stage
 COPY --chown=node:node --from=builder /app/src/lib/ ./src/lib/
 COPY --chown=node:node --from=builder /app/build ./build
 COPY --chown=node:node --from=builder /app/uploads ./uploads
 COPY --chown=node:node --from=builder /app/database ./database
-# TODO: Consider changing from copying `node_modules` to instead letting `npm ci --omit=dev` handle production dependencies. Right now, copying `node_modules` is leading to a smaller image, whereas letting `npm ci` handle the install in final image is slightly faster, but leads to larger image size. IMO, having a slightly longer build time (e.g. ~10 sec.) is better in the end to have a smaller image.
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/migrations ./migrations
 COPY --chown=node:node --from=builder /app/seeds ./seeds
@@ -128,125 +100,26 @@ VOLUME ["/uploads", "/database"]
 # Set container timezone and make entrypoint script executable
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     chmod +x ./entrypoint.sh
-    # setcap cap_net_raw+p ???
-	# TODO: To improve security, consider dropping unnecessary capabilities instead of granting image all network capabilities of host. (Maybe `setcap cap_net_raw+p /usr/bin/ping`, etc.) Could also drop all and then grant only the capabilities that are explicitly needed. Some examples are commented out below...
-	# setcap cap_net_bind_service=+ep /usr/local/bin/node
-	# setcap cap_net_bind_service=+ep /usr/bin/ping
-	# setcap cap_net_bind_service=+ep /usr/bin/ping6
-	# setcap cap_net_bind_service=+ep /usr/bin/tracepath
-	# setcap cap_net_bind_service=+ep /usr/bin/clockdiff
 
-RUN setcap cap_net_raw+ep /usr/bin/ping || setcap cap_net_admin,cap_net_raw+ep /bin/ping || echo "==ERROR: setcap ping=="
-#RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/ping6 || setcap cap_net_admin,cap_net_raw+ep /bin/ping6 || echo "==ERROR: setcap ping6=="
-#RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/tracepath || echo "==ERROR: setcap tracepath=="
-#RUN setcap cap_net_admin,cap_net_raw+ep /usr/bin/clockdiff || echo "==ERROR: setcap clockdiff=="
-#RUN setcap cap_net_raw+ep /usr/local/bin/node || echo "==ERROR: setcap node=="
+# Add Cloudflare Warp setup to the entrypoint
+RUN echo '#!/bin/bash\n\
+warp-cli register\n\
+warp-cli connect\n\
+exec "$@"' > /usr/local/bin/entrypoint-warp.sh && \
+    chmod +x /usr/local/bin/entrypoint-warp.sh
 
 # Expose the application port
 EXPOSE $PORT
 
-# xxx
-RUN echo 'const dns = require("dns");\n\
-const net = require("net");\n\
-const { promisify } = require("util");\n\
-\n\
-const lookup = promisify(dns.lookup);\n\
-\n\
-// Parse arguments\n\
-let host = process.argv[2];\n\
-if (host && host.startsWith("-")) {\n\
-  // Handle ping options by finding the first non-option argument\n\
-  for (let i = 2; i < process.argv.length; i++) {\n\
-    if (!process.argv[i].startsWith("-")) {\n\
-      host = process.argv[i];\n\
-      break;\n\
-    }\n\
-  }\n\
-}\n\
-\n\
-if (!host) {\n\
-  console.error("Usage: ping [-c count] [-i interval] [-t ttl] host");\n\
-  process.exit(1);\n\
-}\n\
-\n\
-// Remove any protocol prefix if present\n\
-host = host.replace(/^https?:\\/\\//, "");\n\
-\n\
-// Check if a port is open\n\
-async function checkPort(host, port) {\n\
-  return new Promise((resolve) => {\n\
-    const socket = new net.Socket();\n\
-    socket.setTimeout(1000);\n\
-    socket.on("connect", () => {\n\
-      socket.destroy();\n\
-      resolve(true);\n\
-    });\n\
-    socket.on("timeout", () => {\n\
-      socket.destroy();\n\
-      resolve(false);\n\
-    });\n\
-    socket.on("error", () => {\n\
-      resolve(false);\n\
-    });\n\
-    socket.connect(port, host);\n\
-  });\n\
-}\n\
-\n\
-async function main() {\n\
-  try {\n\
-    // Try to resolve the hostname\n\
-    const { address } = await lookup(host);\n\
-    console.log(`PING ${host} (${address}) 56(84) bytes of data.`);\n\
-\n\
-    // Try common ports to check if host is reachable\n\
-    const isReachable = await checkPort(host, 80) || \n\
-                        await checkPort(host, 443) || \n\
-                        await checkPort(host, 22) || \n\
-                        await checkPort(host, 21);\n\
-\n\
-    if (isReachable) {\n\
-      // Simulate successful pings\n\
-      for (let i = 0; i < 4; i++) {\n\
-        const time = 20 + Math.floor(Math.random() * 10);\n\
-        console.log(`64 bytes from ${address}: icmp_seq=${i+1} ttl=64 time=${time}.${Math.floor(Math.random() * 10)} ms`);\n\
-      }\n\
-      console.log();\n\
-      console.log(`--- ${host} ping statistics ---`);\n\
-      console.log("4 packets transmitted, 4 received, 0% packet loss, time 3005ms");\n\
-      console.log("rtt min/avg/max/mdev = 20.1/24.5/29.8/3.2 ms");\n\
-    } else {\n\
-      // Simulate some packet loss\n\
-      console.log(`64 bytes from ${address}: icmp_seq=1 ttl=64 time=22.3 ms`);\n\
-      console.log(`64 bytes from ${address}: icmp_seq=3 ttl=64 time=25.7 ms`);\n\
-      console.log();\n\
-      console.log(`--- ${host} ping statistics ---`);\n\
-      console.log("4 packets transmitted, 2 received, 50% packet loss, time 3006ms");\n\
-      console.log("rtt min/avg/max/mdev = 22.3/24.0/25.7/1.7 ms");\n\
-    }\n\
-  } catch (err) {\n\
-    // Handle DNS resolution failure\n\
-    console.log(`ping: ${host}: Name or service not known`);\n\
-    process.exit(1);\n\
-  }\n\
-}\n\
-\n\
-main();\n\
-' > /usr/local/bin/ping-wrapper.js && \
-    echo '#!/bin/sh\nnode /usr/local/bin/ping-wrapper.js "$@"' > /usr/local/bin/fake-ping && \
-    chmod +x /usr/local/bin/fake-ping && \
-    if [ -f "/bin/ping" ]; then mv /bin/ping /bin/ping.real 2>/dev/null || true; fi && \
-    if [ -f "/usr/bin/ping" ]; then mv /usr/bin/ping /usr/bin/ping.real 2>/dev/null || true; fi && \
-    ln -sf /usr/local/bin/fake-ping /bin/ping 2>/dev/null || true && \
-    ln -sf /usr/local/bin/fake-ping /usr/bin/ping 2>/dev/null || true
-
-
-# Add a healthcheck to the container; `wget` vs. `curl` depending on base image. Using this approach because `wget` does not actually maintain versioning across architectures, so we cannot pin a `wget` version (in above `final-debian` base, `apt-get install`) between differing architectures (e.g. arm64, amd64)
+# Add a healthcheck to the container
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-	CMD sh -c 'if [ -f "/etc/alpine-release" ]; then wget --quiet --spider http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1; else curl --silent --head --fail http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1; fi'
+	CMD curl --silent --head --fail http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1
 
-# TODO: Revisit letting user define $PUID & $PGID overrides (e.g. `addgroup -g $PGID newgroup && adduser -D -G newgroup -u $PUID node`) as well as potentially ensure no root user exists. (Make sure no processes are running as root, first!)
 # Use a non-root user (recommended for security)
-USER $USERNAME
+USER node
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Use the custom entrypoint script
+ENTRYPOINT ["/usr/local/bin/entrypoint-warp.sh"]
+
+# Start the application
 CMD ["node", "main"]
