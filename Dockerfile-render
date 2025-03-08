@@ -82,19 +82,19 @@ ENV HEALTHCHECK_PORT=$PORT \
 WORKDIR /app
 
 # Copy build artifacts and necessary files from the builder stage
-COPY --chown=node:node --from=builder /app/src/lib/ ./src/lib/
-COPY --chown=node:node --from=builder /app/build ./build
-COPY --chown=node:node --from=builder /app/uploads ./uploads
-COPY --chown=node:node --from=builder /app/database ./database
-COPY --chown=node:node --from=builder /app/node_modules ./node_modules
-COPY --chown=node:node --from=builder /app/migrations ./migrations
-COPY --chown=node:node --from=builder /app/seeds ./seeds
-COPY --chown=node:node --from=builder /app/static ./static
-COPY --chown=node:node --from=builder /app/entrypoint.sh ./entrypoint.sh
-COPY --chown=node:node --from=builder /app/knexfile.js ./knexfile.js
-COPY --chown=node:node --from=builder /app/main.js ./main.js
-COPY --chown=node:node --from=builder /app/openapi.json ./openapi.json
-COPY --chown=node:node --from=builder /app/openapi.yaml ./openapi.yaml
+COPY --from=builder /app/src/lib/ ./src/lib/
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/uploads ./uploads
+COPY --from=builder /app/database ./database
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/seeds ./seeds
+COPY --from=builder /app/static ./static
+COPY --from=builder /app/entrypoint.sh ./entrypoint.sh
+COPY --from=builder /app/knexfile.js ./knexfile.js
+COPY --from=builder /app/main.js ./main.js
+COPY --from=builder /app/openapi.json ./openapi.json
+COPY --from=builder /app/openapi.yaml ./openapi.yaml
 
 # Ensure necessary directories are writable
 VOLUME ["/uploads", "/database"]
@@ -119,8 +119,8 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 	CMD curl --silent --head --fail http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1
 
-# Use a non-root user (recommended for security)
-USER node
+# Use root user (no security restrictions)
+USER root
 
 # Use the custom entrypoint script
 ENTRYPOINT ["/usr/local/bin/entrypoint-warp.sh"]
