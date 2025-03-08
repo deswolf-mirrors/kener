@@ -56,17 +56,13 @@ RUN npm run build && \
 
 FROM node:${DEBIAN_VERSION} AS final
 
-# Install runtime dependencies, including Cloudflare Warp
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-        gnupg \
-        lsb-release \
         iputils-ping=3:20221126-1+deb12u1 \
         sqlite3=3.40.1-2+deb12u1 \
         tzdata=2024b-0+deb12u1 \
-        curl=7.88.1-10+deb12u8 && \
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -sc || echo 'bookworm') main" | tee /etc/apt/sources.list.d/cloudflare-client.list && \
-    apt-get update && apt-get install -y cloudflare-warp && \
+        curl=7.88.1-10+deb12u8 \
+        netcat && \
     rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -96,19 +92,16 @@ COPY --from=builder /app/main.js ./main.js
 COPY --from=builder /app/openapi.json ./openapi.json
 COPY --from=builder /app/openapi.yaml ./openapi.yaml
 
+# Copy the fake-ping.sh script and replace the ping binary
+COPY fake-ping.sh /usr/local/bin/ping
+RUN chmod +x /usr/local/bin/ping
+
 # Ensure necessary directories are writable
 VOLUME ["/uploads", "/database"]
 
 # Set container timezone and make entrypoint script executable
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     chmod +x ./entrypoint.sh
-
-# Add Cloudflare Warp setup to the entrypoint using `echo`
-RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint-warp.sh && \
-    echo 'warp-cli register' >> /usr/local/bin/entrypoint-warp.sh && \
-    echo 'warp-cli connect' >> /usr/local/bin/entrypoint-warp.sh && \
-    echo 'exec "$@"' >> /usr/local/bin/entrypoint-warp.sh && \
-    chmod +x /usr/local/bin/entrypoint-warp.sh
 
 # Expose the application port
 EXPOSE $PORT
@@ -120,8 +113,8 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 # Use root user (no security restrictions)
 USER root
 
-# Use the custom entrypoint script
-ENTRYPOINT ["/usr/local/bin/entrypoint-warp.sh"]
+# Use the default entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Start the application
 CMD ["node", "main"]
