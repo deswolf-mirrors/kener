@@ -103,5 +103,27 @@ VOLUME ["/uploads", "/database"]
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     chmod +x ./entrypoint.sh
 
-# Add Cloudflare Warp setup to the entrypoint
-RUN echo '#!/bin
+# Add Cloudflare Warp setup to the entrypoint using heredoc
+RUN cat << 'EOF' > /usr/local/bin/entrypoint-warp.sh
+#!/bin/bash
+warp-cli register
+warp-cli connect
+exec "$@"
+EOF
+RUN chmod +x /usr/local/bin/entrypoint-warp.sh
+
+# Expose the application port
+EXPOSE $PORT
+
+# Add a healthcheck to the container
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+	CMD curl --silent --head --fail http://localhost:$HEALTHCHECK_PORT$HEALTHCHECK_PATH || exit 1
+
+# Use a non-root user (recommended for security)
+USER node
+
+# Use the custom entrypoint script
+ENTRYPOINT ["/usr/local/bin/entrypoint-warp.sh"]
+
+# Start the application
+CMD ["node", "main"]
