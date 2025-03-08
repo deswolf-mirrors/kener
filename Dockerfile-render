@@ -103,14 +103,12 @@ VOLUME ["/uploads", "/database"]
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     chmod +x ./entrypoint.sh
 
-# Add Cloudflare Warp setup to the entrypoint using heredoc
-RUN cat > /usr/local/bin/entrypoint-warp.sh << 'EOF'
-#!/bin/bash
-warp-cli register
-warp-cli connect
-exec "$@"
-EOF
-RUN chmod +x /usr/local/bin/entrypoint-warp.sh
+# Add Cloudflare Warp setup to the entrypoint using `echo`
+RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint-warp.sh && \
+    echo 'warp-cli register' >> /usr/local/bin/entrypoint-warp.sh && \
+    echo 'warp-cli connect' >> /usr/local/bin/entrypoint-warp.sh && \
+    echo 'exec "$@"' >> /usr/local/bin/entrypoint-warp.sh && \
+    chmod +x /usr/local/bin/entrypoint-warp.sh
 
 # Expose the application port
 EXPOSE $PORT
